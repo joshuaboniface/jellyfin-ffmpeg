@@ -20,17 +20,37 @@ jobs:
       fail-fast: false
       matrix:
         release:
-          - bullseye
+          # Debian
           - buster
-          - focal
+          - bullseye
+          # Ubuntu
           - bionic
-          - impish
+          - focal
           - hirsute
-
+          - impish
         arch:
           - amd64
           - arm64
           - armhf
+        include:
+          - release: buster
+            docker_release: debian:buster
+            gcc_version: 8
+          - release: bullseye
+            docker_release: debian:bullseye
+            gcc_version: 10
+          - release: bionic
+            docker_release: ubuntu:bionic
+            gcc_version: 7
+          - release: focal
+            docker_release: ubuntu:focal
+            gcc_version: 9
+          - release: hirsute
+            docker_release: ubuntu:hirsute
+            gcc_version: 10
+          - release: impish
+            docker_release: ubuntu:impish
+            gcc_version: 11
 
     steps:
       - uses: actions/checkout@v2
@@ -38,14 +58,27 @@ jobs:
       - name: Install make and mmv
         run: sudo apt-get install make mmv
 
-      - name: Build
-        run: ./build ${{ matrix.release }} ${{ matrix.arch }} dist
+      - name: Create temporary artifact directory
+        run: mkdir -p "/tmp/build_${{ matrix.release }}_${{ matrix.arch }}"
 
-      - name: Upload Packages
+      - name: Prepare Dockerfile
+        run: make -f Dockerfile.make DISTRO=${{ matrix.docker_release }} ARCH=${{ matrix.arch }} GCC_VER=${{ matrix.gcc_version }}
+
+      - name: Build Dockerfile
+        run: docker build . -t "build_${{ matrix.release }}_${{ matrix.arch }}"
+
+      - name: Run Dockerfile to build archives
+        run: docker run --rm -e "RELEASE=${{ matrix.docker_release }}" -v "/tmp/build_${{ matrix.release }}_${{ matrix.arch }}:/dist" "build_${{ matrix.release }}_${{ matrix.arch }}"
+
+      - name: Rename package files
+        run: mmv "/tmp/build_${{ matrix.release }}_${{ matrix.arch }}/*_${{ matrix.arch }}.*" "/tmp/build_${{ matrix.release }}_${{ matrix.arch }}/#1-${{ matrix.release }}_${{ matrix.arch }}.#2"
+
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v2.2.3
         with:
-          name: ${{ matrix.release }} ${{ matrix.arch }} package
-          path: dist
+          name: ${{ matrix.release }}_${{ matrix.arch }}
+          path: /tmp/build_${{ matrix.release }}_${{ matrix.arch }}
+
   build_win64:
     name: Build windows win64
     runs-on: ubuntu-latest
@@ -65,5 +98,5 @@ jobs:
       - name: Upload Packages
         uses: actions/upload-artifact@v2.2.3
         with:
-          name: windows win64 package
+          name: windows_win64
           path: dist
